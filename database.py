@@ -55,7 +55,7 @@ def get_today(today):
 def get_month(month):
     conn = get_conn()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM expenses WHERE date LIKE %s", (f"{month}%",))
+    cursor.execute("SELECT * FROM expenses WHERE date::text LIKE %s", (f"{month}%",))
     rows = cursor.fetchall()
     conn.close()
     return rows

@@ -136,7 +136,7 @@ async def on_message(message):
             ws.append(["ID" , "Date" , "Name" , "Amount" , "Category"])
 
             for row in rows:
-                ws.append(list(row))
+                ws.append([str(col) if hasattr(col, 'tzinfo') else col for col in row])
 
             buf = io.BytesIO()
             wb.save(buf)
