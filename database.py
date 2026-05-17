@@ -1,13 +1,22 @@
-import sqlite3
+import psycopg2
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+DB_URL = os.getenv("DATABASE_URL")
+
+def get_conn():
+    return psycopg2.connect(DB_URL)
 
 
 def init_db():
-    conn = sqlite3.connect("expenses.db")
+    conn = get_conn()
     cursor = conn.cursor()
     cursor.execute(
         """
             CREATE TABLE IF NOT EXISTS expenses(
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 date TEXT,
                 name TEXT,
                 amount REAL,
@@ -19,16 +28,16 @@ def init_db():
     conn.close()
 
 def add_expense(date,name,amount,category):
-    conn = sqlite3.connect("expenses.db")
+    conn = get_conn()
     cursor = conn.cursor()
-    cursor.execute("INSERT INTO expenses (date, name, amount, category) VALUES (?, ?, ?, ?)",
+    cursor.execute("INSERT INTO expenses (date, name, amount, category) VALUES (%s , %s , %s , %s)",
                    (date, name, amount, category))
     conn.commit()
     conn.close()
 
 
 def get_all():
-    conn = sqlite3.connect("expenses.db")
+    conn = get_conn()
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM expenses")
     rows = cursor.fetchall()
@@ -36,25 +45,25 @@ def get_all():
     return rows
 
 def get_today(today):
-    conn = sqlite3.connect("expenses.db")
+    conn = get_conn()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM expenses WHERE date = ?",(today,))
+    cursor.execute("SELECT * FROM expenses WHERE date = %s",(today,))
     rows = cursor.fetchall()
     conn.close()
     return rows
 
 def get_month(month):
-    conn = sqlite3.connect("expenses.db")
+    conn = get_conn()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM expenses WHERE date LIKE ?", (f"{month}%",))
+    cursor.execute("SELECT * FROM expenses WHERE date LIKE %s", (f"{month}%",))
     rows = cursor.fetchall()
     conn.close()
     return rows
 
 def delete_expense(name):
-    conn = sqlite3.connect("expenses.db")
+    conn = get_conn()
     cursor = conn.cursor()
-    cursor.execute("DELETE FROM expenses WHERE LOWER(name) = LOWER(?)", (name,))
+    cursor.execute("DELETE FROM expenses WHERE LOWER(name) = LOWER(%s)", (name,))
     affected = cursor.rowcount
     conn.commit()
     conn.close()
