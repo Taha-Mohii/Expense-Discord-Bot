@@ -1,12 +1,12 @@
-
+from database import init_db, add_expense, get_all, get_today, get_month, delete_expense
 import discord
 import os
-import csv
 import io
 from datetime import datetime,date
 from dotenv import load_dotenv
-import pandas as pd
 import matplotlib.pyplot as plt
+import openpyxl
+import io
 
 load_dotenv()
 
@@ -35,110 +35,119 @@ async def on_message(message):
             amount = float(parts[2])
             category = parts[3]
             today_date = datetime.now().strftime("%Y-%m-%d")
-            with open("expenses.csv","a",newline="") as f:
-                writer = csv.writer(f)
-                writer.writerow([today_date,name,amount,category])
-                await message.channel.send(f"✅ Saved! {name} - ₹{amount} ({category})")
+            add_expense(today_date,name,amount,category)
+            await message.channel.send(f"✅ Saved! {name} - ₹{amount} ({category})")
 
 
     elif message.content == "summary":
-        try:
-            total = 0
-            with open("expenses.csv","r") as f:
-                reader = csv.reader(f)
-                for row in reader:
-                    if len(row) >= 3:
-                        try:
-                            total += float(row[2])
-                        except ValueError:
-                            pass
-            await message.channel.send(f"💰 Total spent: ₹{total}")
-        except FileNotFoundError:
+        
+        rows = get_all()
+        if not rows:
             await message.channel.send("No expenses yet!..")
+        else:
+            total = sum(row[3] for row in rows)
+            await message.channel.send(f"💰 Total spent: ₹{total}")
+        
 
     elif message.content == "today":
-        try:
-            df = pd.read_csv("expenses.csv", names=["date", "name", "amount"])
-            today = str(date.today())
-            today_df = df[df["date"] == today]
-            if today_df.empty:
-                await message.channel.send("No expenses today!..")
-            else:
-                result = "📅 Today's expenses:\n"
-                for _, row in today_df.iterrows():
-                    result += f"• {row['name']} - ₹{row['amount']}\n"
-                result += f"\n💰 Total: ₹{today_df['amount'].sum()}"
-                await message.channel.send(result)
-        except FileNotFoundError:
-            await message.channel.send("No expenses yet..")
+        today = str(date.today())
+        rows = get_today(today)
+        if not rows:
+            await message.channel.send("No expenses today!..")
+        else:
+            result = "📅 Today's expenses:\n"
+            total = 0
+            for row in rows:
+                result += f"• {row[2]} - ₹{row[3]} ({row[4]})\n"
+                total += row[3]
+            result += f"\n💰 Total: ₹{total}"
+            await message.channel.send(result)
 
 
     elif message.content == "chart":
-        try:
-            df = pd.read_csv("expenses.csv", names=["date","name","amount","category"])
-            df["amount"] = pd.to_numeric(df["amount"],errors="coerce")
-            category_spending = df.groupby("category")["amount"].sum().dropna()
+        rows = get_all()
+        if not rows:
+            await message.channel.send("No expenses yet!")
+        else:
+            category_totals = {}
+            for row in rows:
+                category = row[4]
+                amount = row[3]
+                category_totals[category] = category_totals.get(category, 0) + amount
 
-            if category_spending.empty:
-                await message.channel.send("No data to display..")
-                return
-
-            plt.figure(figsize=(6,6))
-            category_spending.plot(kind="pie",autopct="%1.1f%%",startangle=90)
+            plt.figure(figsize=(6, 6))
+            plt.pie(
+                category_totals.values(),
+                labels=category_totals.keys(),
+                autopct="%1.1f%%",
+                startangle=90
+            )
             plt.title("Spending Breakdown")
-            plt.ylabel("")
             plt.tight_layout()
 
             buf = io.BytesIO()
-            plt.savefig(buf,format="png")
+            plt.savefig(buf, format="png")
             buf.seek(0)
             plt.close()
 
-            await message.channel.send(file=discord.File(buf,filename="chart.png"))
-        except FileNotFoundError:
-            await message.channel.send("No expenses yet..")
+            await message.channel.send(file=discord.File(buf, filename="chart.png"))
 
     elif message.content.startswith("month"):
         parts = message.content.split()
         if len(parts) < 2:
             await message.channel.send("❌ Format: month <YYYY-MM>")
         else:
-            try:
-                month = parts[1]
-                df = pd.read_csv("expenses.csv",names=["date","name","amount","category"])
-                df["amount"] = pd.to_numeric(df["amount"], errors="coerce")
-                month_df = df[df["date"].str.startswith(month)]
+            month = parts[1]
+            rows = get_month(month)
+            if not rows:
+                await message.channel.send(f"No expenses for {month}")
+            else:
+                result = f"📅 Expenses for {month}:\n"
+                total = 0
+                for row in rows:
+                    result += f"• {row[2]} - ₹{row[3]} ({row[4]})\n"
+                    total += row[3]
+            result += f"\n💰 Total: ₹{total}"
+            await message.channel.send(result)
 
-                if month_df.empty:
-                    await message.channel.send(f"No expenses for {month}")
-                else:
-                    result = f"📅 Expenses for {month}:\n"
-                    for _, row in month_df.iterrows():
-                        result += f"• {row['name']} - ₹{row['amount']} ({row['category']})\n"
-                    result += f"\n💰 Total: ₹{month_df['amount'].sum()}"
-                    await message.channel.send(result)
-            except FileExistsError:
-                await message.channel.send("No expenses yet..")
 
     elif message.content.startswith("delete"):
         parts = message.content.split()
         if len(parts) < 2:
             await message.channel.send("❌ Format: delete <name>")
         else:
-            try:
-                name_to_delete = parts[1].lower()
-                df = pd.read_csv("expenses.csv", names=["date","name","amount","category"])
-                df["amount"] = pd.to_numeric(df["amount"], errors="coerce")
+            affected = delete_expense(parts[1])
+            if affected == 0:
+                await message.channel.send(f"❌ No expense found with name: {parts[1]}")
+            else:
+                await message.channel.send(f"✅ Deleted all entries for: {parts[1]}")
 
-                original_len = len(df)
-                df = df[df["name"].str.lower() != name_to_delete]
-                if len(df) == original_len:
-                    await message.channel.send(f"❌ No expense found with name: {parts[1]}")
-                else:
-                    df.to_csv("expenses.csv" , index = False , header = False)
-                    await message.channel.send(f"✅ Deleted all entries for: {parts[1]}")
-            except FileNotFoundError:
-                await message.channel.send("NO expenses yet..")
+    elif message.content == "export":
+        rows = get_all()
+        if not rows:
+            await message.channel.send("No expense yet..!")
+        else:
+            
+
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.title = "Expenses"
+
+            ws.append(["ID" , "Date" , "Name" , "Amount" , "Category"])
+
+            for row in rows:
+                ws.append(list(row))
+
+            buf = io.BytesIO()
+            wb.save(buf)
+            buf.seek(0)
+
+            await message.channel.send(
+                " 📊 Expense Data..!",
+                file = discord.File(buf , filename = "expenses.xlsx")
+            )
+
+
     elif message.content == "help":
             help_text = """
         📖 **ExpenseBot Commands**
@@ -150,6 +159,7 @@ async def on_message(message):
         `month <YYYY-MM>` — Show monthly report
         `chart` — Show spending pie chart
         `ping` — Test the bot
+        `export`  — export expenses file 
         `help` — Show this message
         """
             await message.channel.send(help_text)
